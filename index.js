@@ -1,6 +1,9 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { createClient } = require('@supabase/supabase-js');
+const XLSX = require('xlsx');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -32,6 +35,7 @@ async function handleEvent(event) {
   if (text === 'summary_today') return handleSummary(event, userId, 'today');
   if (text === 'summary_week') return handleSummary(event, userId, 'week');
   if (text === 'summary_month') return handleSummary(event, userId, 'month');
+  if (text === 'export' || text === 'Export' || text === 'ส่งออก') return handleExport(event, userId);
 }
 
 async function getOrCreateUser(lineUserId) {
@@ -73,16 +77,13 @@ async function handleClockOut(event, lineUserId) {
   await supabase.from('work_logs').update({ clock_out: now.toISOString(), hours_worked: Math.round(hoursWorked * 100) / 100, income: Math.round(income) }).eq('id', log.id);
   const h = Math.floor(hoursWorked);
   const m = Math.round((hoursWorked - h) * 60);
-  return client.replyMessage(event.replyToken, { type: 'text', text: '🏁 สรุปการทำงานวันนี้\n⏰ เริ่ม: ' + formatTime(clockIn) + ' น.\n⏰ เลิก: ' + formatTime(now) + ' น.\n⌛ รวม: ' + h + ' ชม. ' + m + ' นาที\n💰 รายได้: ' + Math.round(income).toLocaleString() + ' บาท\nพักผ่อนให้เพียงพอด้วยนะครับ 😊' });
+  return client.replyMessage(event.replyToken, { type: 'text', text: '🏁 สรุปการทำงานวันนี้\n⏰ เริ่ม: ' + formatTime(clockIn) + ' น.\n⏰ เลิก: ' + formatTime(now) + ' น.\n⌛ รวม: ' + h + ' ชม. ' + m + ' นาที\nพักผ่อนให้เพียงพอด้วยนะครับ 😊' });
 }
 
 async function handleSummaryMenu(event) {
   return client.replyMessage(event.replyToken, {
-    type: 'template',
-    altText: 'เลือกดูรายได้',
-    template: {
-      type: 'buttons',
-      text: 'เลือกดูรายได้ช่วงไหนครับ?',
+    type: 'template', altText: 'เลือกดูรายได้',
+    template: { type: 'buttons', text: 'เลือกดูรายได้ช่วงไหนครับ?',
       actions: [
         { type: 'postback', label: 'วันนี้', data: 'summary_today' },
         { type: 'postback', label: 'สัปดาห์นี้', data: 'summary_week' },
@@ -106,8 +107,46 @@ async function handleSummary(event, lineUserId, period) {
   return client.replyMessage(event.replyToken, { type: 'text', text: '📊 สรุปรายได้' + label + '\n👤 ' + user.name + '\n📆 ทำงาน: ' + logs.length + ' วัน\n⌛ รวม: ' + totalHours.toFixed(1) + ' ชม.\n💰 รายได้: ' + totalIncome.toLocaleString() + ' บาท' });
 }
 
+async function handleExport(event, lineUserId) {
+  const user = await getOrCreateUser(lineUserId);
+  const now = new Date();
+  const startDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+  const { data: logs } = await supabase.from('work_logs').select('*').eq('user_id', user.id).gte('work_date', startDate).not('clock_out', 'is', null).order('work_date', { ascending: true });
+  if (!logs || logs.length === 0) {
+    return client.replyMessage(event.replyToken, { type: 'text', text: '❌ ไม่มีข้อมูลเดือนนี้ครับ' });
+  }
+  const rows = logs.map(l => ({
+    'วันที่': l.work_date,
+    'เริ่มงาน': l.clock_in ? formatTime(l.clock_in) : '-',
+    'เลิกงาน': l.clock_out ? formatTime(l.clock_out) : '-',
+    'ชั่วโมงรวม': l.hours_worked || 0,
+    'รายได้ (บาท)': l.income || 0,
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'รายงาน');
+  const filename = `report_${user.name}_${startDate}.xlsx`;
+  const filepath = path.join('/tmp', filename);
+  XLSX.writeFile(wb, filepath);
+  return client.replyMessage(event.replyToken, {
+    type: 'text',
+    text: '📊 ไฟล์ Excel พร้อมแล้วครับ!\n👤 ' + user.name + '\n📆 ' + logs.length + ' วัน\n\n⬇️ กดลิงก์เพื่อดาวน์โหลด:\nhttps://linebot-drivers.onrender.com/download/' + filename
+  });
+}
+
+app.get('/download/:filename', (req, res) => {
+  const filepath = path.join('/tmp', req.params.filename);
+  if (fs.existsSync(filepath)) {
+    res.download(filepath);
+  } else {
+    res.status(404).send('File not found');
+  }
+});
+
 const formatTime = (d) => new Date(d).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
 app.get('/', (req, res) => res.send('LINE Bot is running!'));
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Bot running on port ' + PORT));
