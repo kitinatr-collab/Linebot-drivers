@@ -109,6 +109,5 @@ async function handleSummary(event, lineUserId, period) {
 const formatTime = (d) => new Date(d).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
 app.get('/', (req, res) => res.send('LINE Bot is running!'));
-app.lconst PORT = process.env.PORT || 3000;
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Bot running on port ' + PORT));
