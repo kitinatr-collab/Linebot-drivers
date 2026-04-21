@@ -53,6 +53,16 @@ async function getOrCreateUser(lineUserId) {
   return user;
 }
 
+async function notifyAdmin(message) {
+  const adminId = process.env.ADMIN_USER_ID;
+  if (!adminId) return;
+  try {
+    await client.pushMessage(adminId, { type: 'text', text: message });
+  } catch (err) {
+    console.error('Admin notify error:', err);
+  }
+}
+
 async function handleClockIn(event, lineUserId) {
   const user = await getOrCreateUser(lineUserId);
   const today = new Date().toISOString().split('T')[0];
@@ -62,6 +72,7 @@ async function handleClockIn(event, lineUserId) {
   }
   const now = new Date();
   await supabase.from('work_logs').insert({ user_id: user.id, clock_in: now.toISOString(), work_date: today });
+  await notifyAdmin('🟢 เริ่มงาน\n👤 ' + user.name + '\n⏰ ' + formatTime(now) + ' น.');
   return client.replyMessage(event.replyToken, { type: 'text', text: '✅ บันทึกเวลาเริ่มงานแล้ว!\n⏰ เริ่ม: ' + formatTime(now) + ' น.\nขับดีๆ นะครับ 🚗💨' });
 }
 
@@ -77,6 +88,7 @@ async function handleClockOut(event, lineUserId) {
   await supabase.from('work_logs').update({ clock_out: now.toISOString(), hours_worked: Math.round(hoursWorked * 100) / 100, income: Math.round(income) }).eq('id', log.id);
   const h = Math.floor(hoursWorked);
   const m = Math.round((hoursWorked - h) * 60);
+  await notifyAdmin('🔴 เลิกงาน\n👤 ' + user.name + '\n⏰ ' + formatTime(now) + ' น.\n⌛ ' + h + ' ชม. ' + m + ' นาที');
   return client.replyMessage(event.replyToken, { type: 'text', text: '🏁 สรุปการทำงานวันนี้\n⏰ เริ่ม: ' + formatTime(clockIn) + ' น.\n⏰ เลิก: ' + formatTime(now) + ' น.\n⌛ รวม: ' + h + ' ชม. ' + m + ' นาที\nพักผ่อนให้เพียงพอด้วยนะครับ 😊' });
 }
 
