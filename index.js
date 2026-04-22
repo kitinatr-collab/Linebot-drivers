@@ -126,8 +126,8 @@ async function handleExport(event, lineUserId) {
   const startDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
 
   let query = supabase
-    .from('work_logs')
-    .select('*, users(name)')
+    .from('work_logs_with_name')
+    .select('*')
     .gte('work_date', startDate)
     .not('clock_out', 'is', null)
     .order('work_date', { ascending: true });
@@ -143,7 +143,7 @@ async function handleExport(event, lineUserId) {
   }
 
   const rows = logs.map(l => ({
-    'ชื่อ': l.users?.name || '-',
+    'ชื่อ': l.driver_name || '-',
     'วันที่': l.work_date,
     'เริ่มงาน': l.clock_in ? formatTime(l.clock_in) : '-',
     'เลิกงาน': l.clock_out ? formatTime(l.clock_out) : '-',
