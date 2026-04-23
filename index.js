@@ -1,9 +1,6 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { createClient } = require('@supabase/supabase-js');
-const XLSX = require('xlsx');
-const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -139,40 +136,25 @@ async function handleExport(event, lineUserId) {
   const { data: logs } = await query;
 
   if (!logs || logs.length === 0) {
-    return client.replyMessage(event.replyToken, { type: 'text', text: '❌ ไม่มีข้อมูลเดือนนี้ครับ' });
+    return client.replyMessage(event.replyToken, {
+      type: 'text', text: '❌ ไม่มีข้อมูลเดือนนี้ครับ'
+    });
   }
 
-  const rows = logs.map(l => ({
-    'ชื่อ': l.driver_name || '-',
-    'วันที่': l.work_date,
-    'เริ่มงาน': l.clock_in ? formatTime(l.clock_in) : '-',
-    'เลิกงาน': l.clock_out ? formatTime(l.clock_out) : '-',
-    'ชั่วโมงรวม': l.hours_worked || 0,
-    'รายได้ (บาท)': l.income || 0,
-  }));
+  let text = '📊 ข้อมูลเดือนนี้\nชื่อ | วันที่ | เริ่ม | เลิก | ชั่วโมง | รายได้\n';
+  text += '─'.repeat(30) + '\n';
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
-  XLSX.utils.book_append_sheet(wb, ws, 'รายงาน');
-  const filename = `report_all_${startDate}.xlsx`;
-  const filepath = path.join('/tmp', filename);
-  XLSX.writeFile(wb, filepath);
-
-  return client.replyMessage(event.replyToken, {
-    type: 'text',
-    text: '📊 ไฟล์ Excel พร้อมแล้วครับ!\n📆 ' + logs.length + ' รายการ\n\n⬇️ กดดาวน์โหลด:\nhttps://linebot-drivers.onrender.com/download/' + filename
+  logs.forEach(l => {
+    text += `${l.driver_name || '-'} | ${l.work_date} | ${l.clock_in ? formatTime(l.clock_in) : '-'} | ${l.clock_out ? formatTime(l.clock_out) : '-'} | ${l.hours_worked || 0} ชม. | ${(l.income || 0).toLocaleString()} บ.\n`;
   });
-}
 
-app.get('/download/:filename', (req, res) => {
-  const filepath = path.join('/tmp', req.params.filename);
-  if (fs.existsSync(filepath)) {
-    res.download(filepath);
-  } else {
-    res.status(404).send('File not found');
-  }
-});
+  const totalIncome = logs.reduce((s, l) => s + (l.income || 0), 0);
+  const totalHours = logs.reduce((s, l) => s + (l.hours_worked || 0), 0);
+  text += '─'.repeat(30) + '\n';
+  text += `รวม ${logs.length} วัน | ${totalHours.toFixed(1)} ชม. | ${totalIncome.toLocaleString()} บาท`;
+
+  return client.replyMessage(event.replyToken, { type: 'text', text });
+}
 
 const formatTime = (d) => new Date(d).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
