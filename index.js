@@ -61,9 +61,13 @@ async function notifyAdmin(message) {
   }
 }
 
+function getTodayBangkok() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+}
+
 async function handleClockIn(event, lineUserId) {
   const user = await getOrCreateUser(lineUserId);
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayBangkok();
   const { data: existing } = await supabase.from('work_logs').select('*').eq('user_id', user.id).eq('work_date', today).is('clock_out', null).single();
   if (existing) {
     return client.replyMessage(event.replyToken, { type: 'text', text: '⚠️ คุณเริ่มงานไปแล้วตั้งแต่ ' + formatTime(existing.clock_in) + ' น.\nกรุณากด เลิกงาน ก่อนครับ' });
@@ -76,7 +80,7 @@ async function handleClockIn(event, lineUserId) {
 
 async function handleClockOut(event, lineUserId) {
   const user = await getOrCreateUser(lineUserId);
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayBangkok();
   const { data: log } = await supabase.from('work_logs').select('*').eq('user_id', user.id).eq('work_date', today).is('clock_out', null).single();
   if (!log) return client.replyMessage(event.replyToken, { type: 'text', text: '⚠️ ไม่พบการเริ่มงานวันนี้ กรุณากด เริ่มงาน ก่อนครับ' });
   const now = new Date();
@@ -107,9 +111,15 @@ async function handleSummary(event, lineUserId, period) {
   const user = await getOrCreateUser(lineUserId);
   const now = new Date();
   let startDate;
-  if (period === 'today') startDate = now.toISOString().split('T')[0];
-  else if (period === 'week') { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); startDate = d.toISOString().split('T')[0]; }
-  else startDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+  if (period === 'today') startDate = getTodayBangkok();
+  else if (period === 'week') {
+    const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+    d.setDate(d.getDate() - d.getDay());
+    startDate = d.toLocaleDateString('en-CA');
+  } else {
+    const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+    startDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
+  }
   const { data: logs } = await supabase.from('work_logs').select('*').eq('user_id', user.id).gte('work_date', startDate).not('clock_out', 'is', null);
   const totalIncome = logs.reduce((s, l) => s + (l.income || 0), 0);
   const totalHours = logs.reduce((s, l) => s + (l.hours_worked || 0), 0);
@@ -119,8 +129,8 @@ async function handleSummary(event, lineUserId, period) {
 
 async function handleExport(event, lineUserId) {
   const user = await getOrCreateUser(lineUserId);
-  const now = new Date();
-  const startDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+  const startDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
 
   let query = supabase
     .from('work_logs_with_name')
