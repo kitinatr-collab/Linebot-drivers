@@ -32,7 +32,8 @@ async function handleEvent(event) {
   if (text === 'summary_today') return handleSummary(event, userId, 'today');
   if (text === 'summary_week') return handleSummary(event, userId, 'week');
   if (text === 'summary_month') return handleSummary(event, userId, 'month');
-  if (text === 'export' || text === 'Export' || text === 'ส่งออก') return handleExport(event, userId);
+  if (text === 'export' || text === 'Export' || text === 'ส่งออก') return handleExport(event, userId, 'this');
+  if (text === 'export เดือนก่อน' || text === 'ส่งออกเดือนก่อน') return handleExport(event, userId, 'last');
 }
 
 async function getOrCreateUser(lineUserId) {
@@ -109,7 +110,6 @@ async function handleSummaryMenu(event) {
 
 async function handleSummary(event, lineUserId, period) {
   const user = await getOrCreateUser(lineUserId);
-  const now = new Date();
   let startDate;
   if (period === 'today') startDate = getTodayBangkok();
   else if (period === 'week') {
@@ -127,10 +127,22 @@ async function handleSummary(event, lineUserId, period) {
   return client.replyMessage(event.replyToken, { type: 'text', text: '📊 สรุปรายได้' + label + '\n👤 ' + user.name + '\n📆 ทำงาน: ' + logs.length + ' วัน\n⌛ รวม: ' + totalHours.toFixed(1) + ' ชม.\n💰 รายได้: ' + totalIncome.toLocaleString() + ' บาท' });
 }
 
-async function handleExport(event, lineUserId) {
+async function handleExport(event, lineUserId, month = 'this') {
   const user = await getOrCreateUser(lineUserId);
   const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
-  const startDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
+  let startDate, endDate, label;
+
+  if (month === 'last') {
+    const lastMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(d.getFullYear(), d.getMonth(), 0);
+    startDate = lastMonth.toLocaleDateString('en-CA');
+    endDate = lastMonthEnd.toLocaleDateString('en-CA');
+    label = 'เดือนก่อน';
+  } else {
+    startDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
+    endDate = null;
+    label = 'เดือนนี้';
+  }
 
   let query = supabase
     .from('work_logs_with_name')
@@ -139,19 +151,18 @@ async function handleExport(event, lineUserId) {
     .not('clock_out', 'is', null)
     .order('work_date', { ascending: true });
 
-  if (!user.is_admin) {
-    query = query.eq('user_id', user.id);
-  }
+  if (endDate) query = query.lte('work_date', endDate);
+  if (!user.is_admin) query = query.eq('user_id', user.id);
 
   const { data: logs } = await query;
 
   if (!logs || logs.length === 0) {
     return client.replyMessage(event.replyToken, {
-      type: 'text', text: '❌ ไม่มีข้อมูลเดือนนี้ครับ'
+      type: 'text', text: '❌ ไม่มีข้อมูล' + label + 'ครับ'
     });
   }
 
-  let text = '📊 ข้อมูลเดือนนี้\nชื่อ | วันที่ | เริ่ม | เลิก | ชั่วโมง | รายได้\n';
+  let text = '📊 ข้อมูล' + label + '\nชื่อ | วันที่ | เริ่ม | เลิก | ชั่วโมง | รายได้\n';
   text += '─'.repeat(30) + '\n';
 
   logs.forEach(l => {
